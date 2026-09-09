@@ -1,0 +1,13 @@
+<mujocoinclude>
+  <!-- Fixed recognition props, visible to offscreen cameras and collidable.
+       These targets add no joints; the floating robot has nq=15, nv=14, nu=7.
+       Positions are in the world frame, metres. -->
+  <body name="target_green_cube" pos="0.59 -0.105 0.03">
+    <geom name="target_green_cube_geom" type="box" size="0.03 0.03 0.03"
+          rgba="0.03 0.90 0.06 1" friction="0.8 0.005 0.0001"/>
+  </body>
+  <body name="target_blue_sphere" pos="0.66 -0.02 0.03">
+    <geom name="target_blue_sphere_geom" type="sphere" size="0.03"
+          rgba="0.03 0.12 0.95 1" friction="0.8 0.005 0.0001"/>
+  </body>
+</mujocoinclude>

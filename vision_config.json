@@ -1,0 +1,14 @@
+{
+  "rgb_camera": "d435i_rgb",
+  "depth_camera": "d435i_depth",
+  "width": 640,
+  "height": 360,
+  "fps": 30,
+  "min_depth_m": 0.28,
+  "max_depth_m": 3.0,
+  "min_area_px": 80,
+  "targets": [
+    {"label": "green_cube", "hsv_lower": [40, 100, 50], "hsv_upper": [85, 255, 255]},
+    {"label": "blue_sphere", "hsv_lower": [115, 200, 40], "hsv_upper": [130, 255, 255]}
+  ]
+}

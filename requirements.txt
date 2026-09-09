@@ -1,0 +1,22 @@
+# Python 3.10 is recommended by the Genesis and PyTorch wheels used here.
+# Install a PyTorch build matching the local CUDA driver before this file:
+# https://pytorch.org/get-started/locally/
+torch==2.7.0
+
+# RL and the two environment APIs used by the tutorial.
+stable-baselines3==2.6.0
+gymnasium==1.1.1
+
+# Simulation backends used by piper_rl_genesis.py and piper_rl_mujoco.py.
+genesis-world==1.2.3
+mujoco==3.3.2
+
+# NumPy 2 is required to load models serialized with NumPy 2.
+numpy==2.2.6
+scipy==1.15.3
+
+# Logging used by the tutorial commands.
+tensorboard==2.19.0
+
+# Wrist RGB-D camera and OpenCV target detection.
+-r requirements-vision.txt

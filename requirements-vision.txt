@@ -1,0 +1,4 @@
+# Tested in conda piper (Python 3.10). Only install ONE OpenCV wheel flavor.
+mujoco==3.3.2
+numpy==2.2.6
+opencv-python==5.0.0.93
