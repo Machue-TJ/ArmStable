@@ -10,13 +10,13 @@ def main():
     parser = argparse.ArgumentParser(description="PiPER wrist RGB-D camera and color detection")
     parser.add_argument("--headless", action="store_true", help="EGL offscreen rendering, no windows")
     parser.add_argument("--frames", type=int, default=300, help="Number of 30 Hz camera frames")
-    parser.add_argument("--config", type=Path, help="Override vision_config.json")
+    parser.add_argument("--config", type=Path, help="Override config/vision/vision_config.json")
     parser.add_argument("--base-motion", type=Path, help="Base trajectory: JSON, CSV or NPZ")
     parser.add_argument("--base-pos", nargs=3, type=float, default=[0, 0, 0], metavar=("X", "Y", "Z"),
                         help="Initial world base position in metres")
     parser.add_argument("--base-rpy", nargs=3, type=float, default=[0, 0, 0], metavar=("ROLL", "PITCH", "YAW"),
                         help="Initial world base rotation in radians")
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent / "outputs" / "vision")
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent / "config" / "outputs" / "vision")
     args = parser.parse_args()
     if args.frames < 1:
         parser.error("--frames must be at least 1")
@@ -29,11 +29,11 @@ def main():
     import cv2
     import mujoco
     import numpy as np
-    from piper_vision import D435iCamera, ROOT, annotate, depth_preview, detect_targets, load_config
-    from piper_base import FloatingBase
+    from config.vision.piper_vision import D435iCamera, ROOT, annotate, depth_preview, detect_targets, load_config
+    from config.flobase.piper_base import FloatingBase
 
     config = load_config(args.config)
-    model = mujoco.MjModel.from_xml_path(str(ROOT / "xml/agilex_piper/scene.xml"))
+    model = mujoco.MjModel.from_xml_path(str(ROOT / "xml/agilex/scene.xml"))
     data = mujoco.MjData(model)
     key = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home")
     mujoco.mj_resetDataKeyframe(model, data, key)

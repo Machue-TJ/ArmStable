@@ -229,7 +229,7 @@
                   <joint name="joint6" axis="0 0 1" range="-3.14 3.14"/>
                   <geom quat="0.707105 0 0 0.707108" mesh="link6" material="gray_mat" class="visual"/>
                   <geom quat="0.707105 0 0 0.707108" mesh="link6" class="collision"/>
-                  <include file="d435i.xml"/>
+                  <include file="../parts/d435i.xml"/>
                     <body name="ee_center_body" pos="0 0 0.1">
                       <site name='ee_center_site' size="0.01" group="3"/>
                     </body>

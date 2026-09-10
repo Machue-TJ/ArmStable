@@ -1,12 +1,9 @@
 # MuJoCo 浮动基座
 
-`xml/agilex_piper/piper.xml` 的 `base_link` 通过 `base_freejoint`
+`xml/agilex/piper.xml` 的 `base_link` 通过 `base_freejoint`
 获得 3 个平移和 3 个旋转自由度，所有子连杆、夹爪和 D435i 相机随之运动。
 `base_target` 是 mocap 位姿目标，`base_drive` weld 约束使基座跟随它。
 默认目标位于世界原点、姿态为单位旋转，因此原演示可直接启动。
-
-本次 Python 接口面向 MuJoCo。Genesis 示例也引用同一 MJCF，尚未适配或验证
-Genesis 对 mocap/weld 的导入及新增基座自由度的控制；请使用以下 MuJoCo 入口。
 
 ## 运行
 
@@ -15,9 +12,9 @@ Genesis 对 mocap/weld 的导入及新增基座自由度的控制；请使用以
 ```bash
 conda activate piper
 # 窗口显示整臂运动，同时显示腕部相机
-python camera_demo.py --base-motion base_motion.json --frames 150
+python camera_demo.py --base-motion config/flobase/base_motion.json --frames 150
 # 无窗口，按轨迹运动约 1 秒，保存最后一帧及实际基座位姿
-python camera_demo.py --headless --base-motion base_motion.json --frames 31
+python camera_demo.py --headless --base-motion config/flobase/base_motion.json --frames 31
 # 指定静态位置和欧拉角
 python camera_demo.py --headless --frames 1 --base-pos 0.1 0 0.2 --base-rpy 0 0 0.3
 ```
@@ -32,9 +29,9 @@ python camera_demo.py --headless --frames 1 --base-pos 0.1 0 0.2 --base-rpy 0 0 
 from pathlib import Path
 import numpy as np
 import mujoco
-from piper_base import BasePose, FloatingBase
+from config.flobase.piper_base import BasePose, FloatingBase
 
-model = mujoco.MjModel.from_xml_path(str(Path("xml/agilex_piper/scene.xml").resolve()))
+model = mujoco.MjModel.from_xml_path(str(Path("xml/agilex/scene.xml").resolve()))
 data = mujoco.MjData(model)
 mujoco.mj_resetDataKeyframe(model, data, model.key("home").id)
 base = FloatingBase(model, data)
@@ -85,9 +82,9 @@ base.reset()  # 轨迹从 t=0 重播；静态模式恢复上次 set_pose
 ## 从文件加载
 
 ```python
-base.load("base_motion.json")
+base.load("config/flobase/base_motion.json")
 # 或者在 Python 中直接构造同样的轨迹
-from piper_base import BaseTrajectory
+from config.flobase.piper_base import BaseTrajectory
 base.set_motion(BaseTrajectory(
     time_s=[0, 1, 2],
     position_m=[[0, 0, 0.1], [0.1, 0, 0.2], [0, 0, 0.1]],
@@ -134,7 +131,7 @@ time_s,x,y,z,roll,pitch,yaw
 
 ```python
 from piper_rl_mujoco import PandaObstacleEnv
-env = PandaObstacleEnv(base_motion="base_motion.json")  # 也接受 BasePose 回调
+env = PandaObstacleEnv(base_motion="config/flobase/base_motion.json")  # 也接受 BasePose 回调
 obs, info = env.reset(seed=0)  # 自动重播基座轨迹
 env.base.set_pose([0, 0, 0.2], rpy_rad=[0, 0, 0.1])
 # env.step(action) 自动推进机械臂和基座
@@ -154,7 +151,7 @@ reset 在基座局部工作空间内采样目标，再转换为世界坐标；�
 ## 验证
 
 ```bash
-python -m unittest discover -s tests -v
+python -m unittest discover -s config/tests -v
 ```
 
 测试涵盖三种文件格式、时间和姿态校验、插值、仿真时钟、整臂与相机变换、

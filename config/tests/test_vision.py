@@ -6,16 +6,16 @@ import sys
 from pathlib import Path
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import mujoco
 import numpy as np
-from piper_vision import D435iCamera, ROOT, detect_targets
+from config.vision.piper_vision import D435iCamera, ROOT, detect_targets
 
 
 class VisionIntegrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model = mujoco.MjModel.from_xml_path(str(ROOT / "xml/agilex_piper/scene.xml"))
+        cls.model = mujoco.MjModel.from_xml_path(str(ROOT / "xml/agilex/scene.xml"))
         cls.data = mujoco.MjData(cls.model)
         cls.camera = D435iCamera(cls.model)
 

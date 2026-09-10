@@ -8,12 +8,12 @@ NumPy 2.2.6。离屏采集使用 EGL，无需 USB 相机或 RealSense SDK。
 ```bash
 conda activate piper
 cd /home/armctrl/PiPER/Piper_rl
-# 离屏采集并保存最后一帧；默认输出 outputs/vision/
+# 离屏采集并保存最后一帧；默认输出 config/outputs/vision/
 python camera_demo.py --headless --frames 1
 # 桌面模式：机械臂场景、RGB 检测窗口、对齐深度窗口；q 或 Esc 退出
 python camera_demo.py --frames 300
 # 无需激活环境的等价入口
-bash scripts/run_camera.sh --headless --frames 30
+bash config/scripts/run_camera.sh --headless --frames 30
 ```
 
 程序默认恢复 XML 的 `home` 关键帧，两个目标在此姿态下可见。桌面模式需要
@@ -21,20 +21,20 @@ bash scripts/run_camera.sh --headless --frames 30
 只有离屏采集模式在本次配置中自动验证。可用 `--config /path/config.json`
 覆盖图像和检测配置，`--output /path/output` 修改输出目录。
 
-新环境安装视觉部分：`python -m pip install -r requirements-vision.txt`。
+新环境安装视觉部分：`python -m pip install -r config/vision/requirements-vision.txt`。
 不要同时安装 opencv-python、opencv-python-headless 和 opencv-contrib-python。
-原 RL/Genesis 的其他依赖仍见 requirements.txt。
+RL 的其他依赖仍见 requirements.txt。
 
 ## 参数位置
 
 | 文件 | 内容 |
 |---|---|
-| `xml/agilex_piper/d435i.xml` | 相对 link6 的安装外参、外壳、载荷质量/惯量、相机 FOV |
-| `xml/agilex_piper/piper.xml` | 在 link6 内 include 相机，固定随腕部运动 |
-| `xml/agilex_piper/vision_targets.xml` | 目标形状、颜色、世界位置和碰撞参数 |
-| `xml/agilex_piper/scene.xml` | 引入真实可渲染目标，离屏缓冲区尺寸和裁剪参数 |
-| `vision_config.json` | 分辨率、帧率、有效深度范围、HSV 阈值、最小连通区域 |
-| `piper_vision.py` | RGB/深度采集、内参、光学坐标变换、颜色检测 |
+| `xml/parts/d435i.xml` | 相对 link6 的安装外参、外壳、载荷质量/惯量、相机 FOV |
+| `xml/agilex/piper.xml` | 在 link6 内 include 相机，固定随腕部运动 |
+| `xml/parts/vision_targets.xml` | 目标形状、颜色、世界位置和碰撞参数 |
+| `xml/agilex/scene.xml` | 引入真实可渲染目标，离屏缓冲区尺寸和裁剪参数 |
+| `config/vision/vision_config.json` | 分辨率、帧率、有效深度范围、HSV 阈值、最小连通区域 |
+| `config/vision/piper_vision.py` | RGB/深度采集、内参、光学坐标变换、颜色检测 |
 | `camera_demo.py` | 30 Hz 采集示例、窗口显示和文件输出 |
 
 外壳 90 × 25 × 25 mm；相对 link6 平移 `(0, -0.065, 0.035)` m，
@@ -120,7 +120,7 @@ finally:
 ## 验证
 
 ```bash
-conda run --no-capture-output -n piper python -m unittest discover -s tests -v
+conda run --no-capture-output -n piper python -m unittest discover -s config/tests -v
 conda run --no-capture-output -n piper python -m pip check
 ```
 

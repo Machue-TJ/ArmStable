@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Optional
 from scipy.spatial.transform import Rotation as R
-from piper_base import FloatingBase
+from config.flobase.piper_base import FloatingBase
 
 # 忽略stable-baselines3的冗余UserWarning
 warnings.filterwarnings("ignore", category=UserWarning, module="stable_baselines3.common.on_policy_algorithm")
@@ -25,7 +25,7 @@ class PandaObstacleEnv(gym.Env):
         self.visualize = visualize
         self.handle = None
 
-        scene_path = Path(__file__).resolve().parent / "xml" / "agilex_piper" / "scene.xml"
+        scene_path = Path(__file__).resolve().parent / "xml" / "agilex" / "scene.xml"
         self.model = mujoco.MjModel.from_xml_path(str(scene_path))
         self.data = mujoco.MjData(self.model)
         self.base = FloatingBase(self.model, self.data)
@@ -230,7 +230,7 @@ class PandaObstacleEnv(gym.Env):
 
     def get_camera_observation(self):
         """按需获取 RGB、米制深度及颜色目标检测；不改变原 PPO 的 9 维观测。"""
-        from piper_vision import D435iCamera, detect_targets
+        from config.vision.piper_vision import D435iCamera, detect_targets
         if self.camera is None:
             self.camera = D435iCamera(self.model)
         frame = self.camera.capture(self.data)
@@ -249,7 +249,7 @@ class PandaObstacleEnv(gym.Env):
 def train_ppo(
     n_envs: int = 24,
     total_timesteps: int = 40_000_000,
-    model_save_path: str = "piper_ppo_reach_target",
+    model_save_path: str = str(Path(__file__).resolve().parent / "models" / "piper_ppo_reach_target"),
     visualize: bool = False
 ) -> None:
 
@@ -297,7 +297,7 @@ def train_ppo(
 
 
 def test_ppo(
-    model_path: str = "piper_ppo_reach_target",
+    model_path: str = str(Path(__file__).resolve().parent / "models" / "piper_ppo_reach_target"),
     total_episodes: int = 5,
 ) -> None:
     env = PandaObstacleEnv(visualize=True)
@@ -335,10 +335,9 @@ def test_ppo(
 
 
 if __name__ == "__main__":
-    # TRAIN_MODE = False
-    # MODEL_PATH = str(Path(__file__).resolve().parent / "piper_ppo_reach_target")
     TRAIN_MODE = False
-    MODEL_PATH = str(Path(__file__).resolve().parent / "piper_train_reach_target")
+    model_name = "piper_train_reach_target" if TRAIN_MODE else "piper_ppo_reach_target"
+    MODEL_PATH = str(Path(__file__).resolve().parent / "models" / model_name)
     if TRAIN_MODE:
         train_ppo(
             # n_envs=64,                

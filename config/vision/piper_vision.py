@@ -12,11 +12,11 @@ import cv2
 import mujoco
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_config(path=None):
-    with open(path or ROOT / "vision_config.json", encoding="utf-8") as stream:
+    with open(path or Path(__file__).with_name("vision_config.json"), encoding="utf-8") as stream:
         config = json.load(stream)
     if config["width"] <= 0 or config["height"] <= 0 or config["fps"] <= 0:
         raise ValueError("Camera dimensions and fps must be positive")
@@ -61,7 +61,7 @@ class D435iCamera:
     def _camera_id(self, name):
         camera_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name)
         if camera_id < 0:
-            raise ValueError(f"Camera {name!r} missing; load xml/agilex_piper/scene.xml")
+            raise ValueError(f"Camera {name!r} missing; load xml/agilex/scene.xml")
         return camera_id
 
     def intrinsics(self, camera_id):

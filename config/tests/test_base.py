@@ -14,9 +14,9 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/piper-matplotlib")
 import mujoco
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from piper_base import BasePose, BaseTrajectory, FloatingBase
+from config.flobase.piper_base import BasePose, BaseTrajectory, FloatingBase
 
 
 class TrajectoryTest(unittest.TestCase):
@@ -67,7 +67,7 @@ class TrajectoryTest(unittest.TestCase):
 class FloatingBaseTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.model = mujoco.MjModel.from_xml_path(str(ROOT / "xml/agilex_piper/scene.xml"))
+        cls.model = mujoco.MjModel.from_xml_path(str(ROOT / "xml/agilex/scene.xml"))
 
     def setUp(self):
         self.data = mujoco.MjData(self.model)
@@ -136,7 +136,7 @@ class FloatingBaseTest(unittest.TestCase):
 class EnvironmentTest(unittest.TestCase):
     def test_arm_control_and_reset_with_remote_base(self):
         from piper_rl_mujoco import PandaObstacleEnv
-        env = PandaObstacleEnv(base_motion=ROOT / "base_motion.json")
+        env = PandaObstacleEnv(base_motion=ROOT / "config/flobase/base_motion.json")
         try:
             env.base.set_pose([10, -5, 2], rpy_rad=[0.1, 0.2, 0.3])
             observation, _ = env.reset(seed=7)
