@@ -40,6 +40,18 @@ class BasePose:
                                 cr*sp*cy + sr*cp*sy, cr*cp*sy - sr*sp*cy])
 
 
+@dataclass
+class BaseVelocity:
+    """Commanded world-frame linear velocity (m/s) and angular velocity (rad/s)."""
+
+    linear_m_s: np.ndarray
+    angular_rad_s: np.ndarray
+
+    def __post_init__(self):
+        self.linear_m_s = _array(self.linear_m_s, (3,), "linear_m_s")
+        self.angular_rad_s = _array(self.angular_rad_s, (3,), "angular_rad_s")
+
+
 class BaseTrajectory:
     """Linear translation and shortest-path quaternion SLERP; hold at endpoints."""
 
@@ -129,6 +141,9 @@ class FloatingBase:
         self.mocap_id = int(model.body("base_target").mocapid[0])
         self.weld_id = model.equality("base_drive").id
         self.motion = None
+        self.episode_offset_m = np.zeros(3)
+        self.velocity_motion = None
+        self.target_pose = None
         self.start_time = 0.0
         qpos = data.qpos[self.qpos_slice]
         self.hold_pose = BasePose(qpos[:3], qpos[3:])
@@ -138,7 +153,7 @@ class FloatingBase:
         if not isinstance(pose, BasePose):
             raise TypeError("Base motion must return BasePose")
         # Revalidate mutable arrays before writing simulation state.
-        pose = BasePose(pose.position_m, pose.quat_wxyz)
+        pose = BasePose(pose.position_m + self.episode_offset_m, pose.quat_wxyz)
         self.data.mocap_pos[self.mocap_id] = pose.position_m
         self.data.mocap_quat[self.mocap_id] = pose.quat_wxyz
         if teleport:
@@ -154,6 +169,8 @@ class FloatingBase:
         pose = (BasePose.from_rpy(position_m, rpy_rad) if rpy_rad is not None
                 else BasePose(position_m, [1, 0, 0, 0] if quat_wxyz is None else quat_wxyz))
         self.motion = None
+        self.episode_offset_m[:] = 0
+        self.velocity_motion = None
         self.hold_pose = pose
         self.data.eq_active[self.weld_id] = 1
         self._apply(pose, teleport=teleport)
@@ -161,24 +178,64 @@ class FloatingBase:
     def set_motion(self, motion: Callable[[float], BasePose]):
         """Start callback/trajectory at t=0 relative to the current simulation time."""
         pose = motion(0.0)
+        self.episode_offset_m[:] = 0
         self._apply(pose, teleport=True)
         self.motion = motion
+        self.velocity_motion = None
         self.start_time = float(self.data.time)
         self.data.eq_active[self.weld_id] = 1
         mujoco.mj_forward(self.model, self.data)
 
+    def set_velocity_motion(self, motion: Callable[[float], BaseVelocity], *, initial_pose=None):
+        """Integrate a world velocity callback into base_target, reset from initial_pose.
+
+        The callback is a function of episode simulation time, sampled at each
+        interval midpoint. Translation uses midpoint integration; rotation uses
+        a quaternion exponential, with world angular velocity left-multiplied.
+        The physical base continues to follow the target through the weld.
+        """
+        self._velocity(motion(0.0))
+        pose = self.get_pose() if initial_pose is None else initial_pose
+        if not isinstance(pose, BasePose):
+            raise TypeError("initial_pose must be BasePose")
+        self.hold_pose = BasePose(pose.position_m, pose.quat_wxyz)
+        self.episode_offset_m[:] = 0
+        self.motion = None
+        self.velocity_motion = motion
+        self.reset()
+
+    @staticmethod
+    def _velocity(value):
+        if not isinstance(value, BaseVelocity):
+            raise TypeError("Velocity callback must return BaseVelocity")
+        return BaseVelocity(value.linear_m_s, value.angular_rad_s)
+
     def load(self, path):
         self.set_motion(BaseTrajectory.load(path))
+
+    def set_episode_offset(self, translation_m):
+        """Restart this episode with a world translation added to every command."""
+        self.episode_offset_m = _array(translation_m, (3,), "translation_m")
+        self.reset()
 
     def reset(self):
         """Call after mj_resetData[Keyframe]; restart motion or restore held pose."""
         self.start_time = float(self.data.time)
         self.data.eq_active[self.weld_id] = 1
-        self._apply(self.motion(0.0) if self.motion is not None else self.hold_pose, teleport=True)
+        pose = self.motion(0.0) if self.motion is not None else self.hold_pose
+        self._apply(pose, teleport=True)
+        self.target_pose = BasePose(pose.position_m, pose.quat_wxyz)
+        if self.velocity_motion is not None:
+            velocity = self._velocity(self.velocity_motion(0.0))
+            rotation = self.data.body("base_link").xmat.reshape(3, 3)
+            # Freejoint translation is world-frame, rotation is body-frame.
+            self.data.qvel[self.qvel_slice] = np.r_[velocity.linear_m_s, rotation.T @ velocity.angular_rad_s]
+            mujoco.mj_forward(self.model, self.data)
 
     def release(self):
         """Disable the platform constraint; existing model gravity compensation remains."""
         self.motion = None
+        self.velocity_motion = None
         self.data.eq_active[self.weld_id] = 0
         mujoco.mj_forward(self.model, self.data)
 
@@ -187,9 +244,25 @@ class FloatingBase:
         qpos = self.data.qpos[self.qpos_slice]
         return BasePose(qpos[:3], qpos[3:])
 
+    def get_velocity(self):
+        """Actual base velocity, in world axes, including weld tracking error."""
+        velocity = self.data.qvel[self.qvel_slice]
+        rotation = self.data.body("base_link").xmat.reshape(3, 3)
+        return BaseVelocity(velocity[:3], rotation @ velocity[3:])
+
     def step(self):
         """Advance one physics step and refresh body/camera world transforms."""
         if self.motion is not None and self.data.eq_active[self.weld_id]:
             self._apply(self.motion(float(self.data.time) - self.start_time))
+        elif self.velocity_motion is not None and self.data.eq_active[self.weld_id]:
+            dt = self.model.opt.timestep
+            velocity = self._velocity(self.velocity_motion(float(self.data.time) - self.start_time + dt / 2))
+            delta = velocity.angular_rad_s * dt
+            angle = np.linalg.norm(delta)
+            rotation = np.r_[np.cos(angle / 2), delta * (np.sin(angle / 2) / angle if angle > 1e-12 else 0.5)]
+            quat = np.empty(4)
+            mujoco.mju_mulQuat(quat, rotation, self.target_pose.quat_wxyz)
+            self.target_pose = BasePose(self.target_pose.position_m + velocity.linear_m_s * dt, quat)
+            self._apply(self.target_pose)
         mujoco.mj_step(self.model, self.data)
         mujoco.mj_forward(self.model, self.data)

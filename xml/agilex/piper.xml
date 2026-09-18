@@ -229,6 +229,9 @@
                   <joint name="joint6" axis="0 0 1" range="-3.14 3.14"/>
                   <geom quat="0.707105 0 0 0.707108" mesh="link6" material="gray_mat" class="visual"/>
                   <geom quat="0.707105 0 0 0.707108" mesh="link6" class="collision"/>
+                  <site name="link6_axis_x" type="cylinder" fromto="0 0 0 0.10 0 0" size="0.008 0.015" rgba="1 0 0 1"/>
+                  <site name="link6_axis_y" type="cylinder" fromto="0 0 0 0 0.10 0" size="0.008 0.015" rgba="0 1 0 1"/>
+                  <site name="link6_axis_z" type="cylinder" fromto="0 0 0 0 0 0.10" size="0.008 0.015" rgba="0 0 1 1"/>
                   <include file="../parts/d435i.xml"/>
                     <body name="ee_center_body" pos="0 0 0.1">
                       <site name='ee_center_site' size="0.01" group="3"/>
@@ -280,4 +283,8 @@
   <keyframe>
     <key name="home" qpos="0 0 0 1 0 0 0 0 1.57 -1.3485 0 0 0 0 0" ctrl="0 1.57 -1.3485 0 0 0 0"/>
   </keyframe>
+  <sensor>
+    <gyro name="d435i_gyro" site="d435i_imu_site"/>
+    <accelerometer name="d435i_accel" site="d435i_imu_site"/>
+  </sensor>
 </mujoco>

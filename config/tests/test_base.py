@@ -16,7 +16,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from config.flobase.piper_base import BasePose, BaseTrajectory, FloatingBase
+from config.flobase.piper_base import BasePose, BaseTrajectory, BaseVelocity, FloatingBase
 
 
 class TrajectoryTest(unittest.TestCase):
@@ -132,6 +132,28 @@ class FloatingBaseTest(unittest.TestCase):
         self.assertEqual(self.data.eq_active[self.base.weld_id], 0)
         self.assertGreater(self.base.get_pose().position_m[0], 0.002)
 
+    def test_world_velocity_integration_reset_and_mode_switch(self):
+        start = BasePose.from_rpy([0, 0, 1], [0.4, -0.3, 0.2])
+        velocity = BaseVelocity([0.02, -0.01, 0.03], [0, 0, 0.2])
+        self.base.set_velocity_motion(lambda t: velocity, initial_pose=start)
+        np.testing.assert_allclose(self.base.get_velocity().angular_rad_s, velocity.angular_rad_s, atol=1e-12)
+        for _ in range(100):
+            self.base.step()
+        elapsed = 100 * self.model.opt.timestep
+        np.testing.assert_allclose(self.data.mocap_pos[self.base.mocap_id],
+                                   start.position_m + velocity.linear_m_s * elapsed, atol=1e-12)
+        delta = BasePose.from_rpy([0, 0, 0], [0, 0, 0.2 * elapsed]).quat_wxyz
+        expected = np.empty(4)
+        mujoco.mju_mulQuat(expected, delta, start.quat_wxyz)
+        np.testing.assert_allclose(self.data.mocap_quat[self.base.mocap_id], expected, atol=1e-12)
+        self.assertLess(np.linalg.norm(self.base.get_pose().position_m - self.base.target_pose.position_m), 0.005)
+        mujoco.mj_resetData(self.model, self.data)
+        self.base.reset()
+        np.testing.assert_allclose(self.base.get_pose().position_m, start.position_m)
+        np.testing.assert_allclose(self.base.get_pose().quat_wxyz, start.quat_wxyz)
+        self.base.set_pose([0, 0, 0.2])
+        self.assertIsNone(self.base.velocity_motion)
+
 
 class EnvironmentTest(unittest.TestCase):
     def test_arm_control_and_reset_with_remote_base(self):
@@ -141,8 +163,9 @@ class EnvironmentTest(unittest.TestCase):
             env.base.set_pose([10, -5, 2], rpy_rad=[0.1, 0.2, 0.3])
             observation, _ = env.reset(seed=7)
             self.assertEqual(observation.shape, (9,))
-            np.testing.assert_allclose(observation[:6], env.home_joint_pos)
-            np.testing.assert_allclose(env.base.get_pose().position_m, [10, -5, 2])
+            np.testing.assert_allclose(observation[:6], env.initial_joint_pos)
+            np.testing.assert_allclose(env.data.ctrl[env.arm_ctrl_ids], env.initial_joint_pos)
+            np.testing.assert_allclose(env.base.get_pose().position_m, [10, -5, 4])
             base_body = env.data.body("base_link")
             local_goal = base_body.xmat.reshape(3, 3).T @ (env.goal - base_body.xpos)
             self.assertGreater(local_goal[0], 0.2)

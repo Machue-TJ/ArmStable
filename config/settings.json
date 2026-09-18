@@ -1,0 +1,133 @@
+{
+  "episode": {
+    "init_poses_csv": "source/sample_init_poses.csv",
+    "free_space": false,
+    "markers": {
+      "count": 6,
+      "diameter_m": 0.015,
+      "marker_fovy": [30, 30],
+      "depth_range_m": [0.2, 2.8],
+      "plane_depth_m": null,
+      "edge_margin": 0.12,
+      "min_gap_m": 0.005,
+      "positions_m": null,
+      "generator": null,
+      "rgba": [0.95, 0.04, 0.65, 1.0],
+      "specular": 0.9,
+      "shininess": 0.8,
+      "plane_visible": true,
+      "plane_rgba": [0.35, 0.7, 1.0, 0.18]
+    },
+    "base": {
+      "mode": "fixed",
+      "position_m": [0, 0, 0],
+      "rpy_rad": [0, 0, 0],
+      "trajectory": "config/flobase/base_motion.json",
+      "callback": null,
+      "initial_height_m": 4.0
+    }
+  },
+  "vision": {
+    "rgb_camera": "d435i_rgb",
+    "depth_camera": "d435i_depth",
+    "width": 1280,
+    "height": 720,
+    "depth_width": 848,
+    "depth_height": 480,
+    "fps": 30,
+    "min_depth_m": 0.168,
+    "max_depth_m": 3.0,
+    "calibration_path": null,
+    "disparity_noise_std_px": 0.08,
+    "disparity_step_px": 0.03125,
+    "stereo_tolerance_m": 0.01,
+    "seed": 0,
+    "min_area_px": 80,
+    "targets": [
+      {
+        "label": "green_cube",
+        "hsv_lower": [40, 100, 50],
+        "hsv_upper": [85, 255, 255]
+      },
+      {
+        "label": "blue_sphere",
+        "hsv_lower": [115, 200, 40],
+        "hsv_upper": [130, 255, 255]
+      }
+    ],
+    "hide_camera_housing": true,
+    "marker_detection": {
+      "diameter_m": 0.015,
+      "hsv_lower": [140, 40, 25],
+      "hsv_upper": [175, 255, 255],
+      "min_area_px": 8,
+      "min_circularity": 0.55,
+      "min_depth_points": 4,
+      "max_center_uncertainty_m": 0.02
+    },
+    "marker_tracking": {
+      "max_age_s": 0.3,
+      "max_pixel_distance": 60,
+      "max_world_distance_m": 0.06,
+      "smoothing_alpha": 0.35
+    }
+  },
+  "imu": {
+    "model": "BMI085",
+    "gyro_fps": 400,
+    "accel_fps": 200,
+    "noise_enabled": true,
+    "quantization_enabled": true,
+    "gyro_bias_rad_s": [0, 0, 0],
+    "accel_bias_m_s2": [0, 0, 0],
+    "calibration_path": null,
+    "seed": 0
+  },
+  "cli": {
+    "camera": {
+      "headless": false,
+      "seed": null,
+      "frames": 300,
+      "reset_every": 0,
+      "output": "config/outputs/vision"
+    },
+    "rl": {
+      "headless": false,
+      "seed": null,
+      "mode": "test",
+      "episodes": 15,
+      "steps": 10,
+      "n_envs": 12,
+      "total_timesteps": 4000000,
+      "model_path": null,
+      "train_model_path": "models/piper_train_reach_target",
+      "test_model_path": "models/piper_ppo_reach_target"
+    },
+    "imu": {
+      "backend": "sim",
+      "samples": 100,
+      "serial": null,
+      "gyro_fps": null,
+      "accel_fps": null,
+      "cutoff_hz": null
+    },
+    "calibration": {
+      "serial": null,
+      "output": null
+    }
+  },
+  "training": {
+    "seed": 42,
+    "net_arch": {
+      "pi": [256, 128],
+      "vf": [256, 128]
+    },
+    "n_steps": 2048,
+    "batch_size": 2048,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "learning_rate": 0.0003,
+    "verbose": 1,
+    "tensorboard_log": "tensorboard/piper_reach_target"
+  }
+}

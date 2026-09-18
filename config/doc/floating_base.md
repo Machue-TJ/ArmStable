@@ -1,5 +1,8 @@
 # MuJoCo 浮动基座
 
+demo 和 RL 的 CSV 初始化、独立的 marker 角度窗口配置、位姿/速度回调入口见
+[CSV 初始化、marker 与基座运动](episode_init.md)。本文保留底层基座 API 和文件格式说明。
+
 `xml/agilex/piper.xml` 的 `base_link` 通过 `base_freejoint`
 获得 3 个平移和 3 个旋转自由度，所有子连杆、夹爪和 D435i 相机随之运动。
 `base_target` 是 mocap 位姿目标，`base_drive` weld 约束使基座跟随它。

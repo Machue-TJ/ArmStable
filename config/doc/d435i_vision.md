@@ -1,128 +1,110 @@
-# PiPER 末端 D435i 仿真与目标识别
+# PiPER 末端 D435i 视觉
 
-## 启动
+`camera_demo.py` 和 RL 使用同一套 D435i 成像参数，统一放在
+`config/settings.json` 的 `vision` 节；`episode.markers.marker_fovy` 仅约束生成范围，
+默认 `[30,30]`，不改变成像。CSV 初始化和运动接口见 [初始化与运动配置](episode_init.md)。
 
-本机 `conda piper` 已有 Python 3.10、MuJoCo 3.3.2、OpenCV 5.0.0.93、
-NumPy 2.2.6。离屏采集使用 EGL，无需 USB 相机或 RealSense SDK。
+各类、函数及视觉处理原理的详细解析见 [piper_vision.py 源码说明](piper_vision_code_guide.md)。
+
+在 `Piper_rl` 目录、conda `piper` 环境运行：
 
 ```bash
-conda activate piper
-cd /home/armctrl/PiPER/Piper_rl
-# 离屏采集并保存最后一帧；默认输出 config/outputs/vision/
-python camera_demo.py --headless --frames 1
-# 桌面模式：机械臂场景、RGB 检测窗口、对齐深度窗口；q 或 Esc 退出
-python camera_demo.py --frames 300
-# 无需激活环境的等价入口
-bash config/scripts/run_camera.sh --headless --frames 30
+python camera_demo.py --headless --frames 30
+python camera_demo.py --base-motion config/flobase/base_motion.json --headless --frames 150
 ```
 
-程序默认恢复 XML 的 `home` 关键帧，两个目标在此姿态下可见。桌面模式需要
-可用的 DISPLAY；不要在该模式设置 `MUJOCO_GL=egl`，可先 `unset MUJOCO_GL`。
-只有离屏采集模式在本次配置中自动验证。可用 `--config /path/config.json`
-覆盖图像和检测配置，`--output /path/output` 修改输出目录。
+默认结果在 `config/outputs/vision/`。图形模式省略 `--headless`，q/Esc 退出。
 
-新环境安装视觉部分：`python -m pip install -r config/vision/requirements-vision.txt`。
-不要同时安装 opencv-python、opencv-python-headless 和 opencv-contrib-python。
-RL 的其他依赖仍见 requirements.txt。
+Linux 的 OpenCV wheel 可能把 `QT_QPA_FONTDIR` 指向不存在的 `cv2/qt/fonts`，
+产生 `QFontDatabase: Cannot find font directory`。视觉模块会在导入 OpenCV 后
+自动选择系统已有字体（例如 `/usr/share/fonts/truetype/dejavu`），无需修改 conda
+目录或重新安装 Qt。这里必须在 `import cv2` 之后设置，因为 OpenCV 导入时会覆盖
+该环境变量。字体警告本身不能说明 OpenGL 渲染是否正常；如果窗口仍为空白，应同时
+检查运行终端的显示连接、后续错误，以及是否使用了 `--headless`。
+视觉与 IMU 参数分别在 `config/settings.json` 的 `vision`、`imu` 节。
+硬件依据、修正项和边界见 [硬件审查说明](d435i_hardware_audit.md)。
 
-## 参数位置
+## 光学与深度
 
-| 文件 | 内容 |
+默认 RGB 1280×720、深度 848×480，均为 30 Hz USB3 配置。RGB 名义 FOV 为
+69°×42°，深度为 87°×58°；fx/fy 分别计算并直接用于 MuJoCo 投影，不再仅用 fovy
+强制方形像素。无单机标定时采用居中主点和零畸变，这不是某台相机的工厂内参。
+
+仿真目前支持 RGB 1280×720 / 1920×1080，深度 848×480 / 1280×720，以及两路
+相同的 6/15/30 Hz。超出这组已实现的模式会报错；这不是 D435i 的全部支持列表。
+深度 848×480 的 Min-Z 下限设为 0.168 m，1280×720 为 0.28 m。`max_depth_m=3`
+是应用裁剪窗口，不是硬件最大可见距离。渲染近远裁剪面同样不代表硬件量程。
+
+左右光心间隔 50 mm，RGB 位于深度左侧 15 mm，均为官方名义外参。
+深度来自左视图，经右视图视野及遮挡一致性检查，只保留两侧可观测的点。
+这会产生距离相关的左侧无效条带及遮挡孔洞。之后在视差域加入误差，再量化成
+Z16（默认每单位 1 mm，零值无效）。视差标准差默认 0.08 pixel 是可调仿真假设，
+不是厂家保证值；1/32 pixel 视差步长近似 D4 子像素深度离散化。
+原生 float32 米制深度将 Z16 的零值转换为 NaN。
+
+对齐深度从原生深度反投影，经深度到 RGB 的外参和 RGB 内参投影，按像素覆盖
+范围写入，冲突保留最近的原生深度。不会从 RGB 相机重新渲染一张完美深度图，
+不会自动补齐缺失值。算法沿用 SDK 的投影/覆盖思路，边缘细节仍可能与 SDK 不同。
+
+相机内部支持加载工厂 fx/fy/ppx/ppy、外参和 RGB Brown-Conrady 系列畸变；
+SDK modified/inverse Brown 使用对应的前向模型，反投影数值求逆。
+深度和右红外要求使用零畸变的已校正 profile。其他畸变模型或分辨率不匹配会报错。
+
+## 输出与接口
+
+| 输出 | 含义 |
 |---|---|
-| `xml/parts/d435i.xml` | 相对 link6 的安装外参、外壳、载荷质量/惯量、相机 FOV |
-| `xml/agilex/piper.xml` | 在 link6 内 include 相机，固定随腕部运动 |
-| `xml/parts/vision_targets.xml` | 目标形状、颜色、世界位置和碰撞参数 |
-| `xml/agilex/scene.xml` | 引入真实可渲染目标，离屏缓冲区尺寸和裁剪参数 |
-| `config/vision/vision_config.json` | 分辨率、帧率、有效深度范围、HSV 阈值、最小连通区域 |
-| `config/vision/piper_vision.py` | RGB/深度采集、内参、光学坐标变换、颜色检测 |
-| `camera_demo.py` | 30 Hz 采集示例、窗口显示和文件输出 |
+| `rgb.png` / `detections.png` | RGB 图像 / 应用层 HSV 颜色检测 |
+| `native_depth_z16.npy` | 原生 uint16 深度；零值无效 |
+| `native_depth_m.npy` | 原生深度轴 Z，米；无效 NaN |
+| `aligned_depth_m.npy` | 映射到 RGB 像素的原生深度轴 Z，沿用 SDK 复制源深度的语义 |
+| `aligned_rgb_z_m.npy` | 相同像素对应的 RGB 光轴 Z，用于 RGB 反投影 |
+| `imu.jsonl` | 两次视觉采集之间每个物理步累计的同步 IMU 样本 |
+| `detections.json` | RGB/深度尺寸、内外参、深度比例、标定来源、检测结果 |
 
-外壳 90 × 25 × 25 mm；相对 link6 平移 `(0, -0.065, 0.035)` m，
-四元数按 MuJoCo `wxyz` 顺序为 `(0, 0.8892927216, 0, -0.4573384472)`。
-视线朝 link6 的 +Z 并向 +X 倾斜 0.95 rad。光心位于相机 body 的
-`(0, 0, -0.014)` m，略在外壳前方；相机不是自动追踪目标的相机。
-75 g 为仿真载荷假设，惯量按均匀长方体计算，未计入支架重量。
-开启 `gravcomp=1` 与现有机器人设置一致；仍会增加腕部运动惯性和碰撞几何。
-安装偏移是示例支架设计，并非实测手眼标定结果。
-
-RGB 垂直 FOV 为 42°，深度垂直 FOV 为 58°；`fovy` 始终使用度，
-不受 `compiler angle="radian"` 影响。分辨率为 640 × 360、30 Hz，
-按方形像素针孔模型推导水平 FOV（因此不保证精确复现规格表的水平 FOV）。
-0.28～3 m 为保守的示例有效深度窗口；不模拟随分辨率变化的近距性能。
-`scene.xml` 的 znear/zfar 是相对模型 extent 的渲染裁剪参数，不是上述传感器量程。
-
-规格参考：[D435i 产品页](https://www.realsenseai.com/products/depth-camera-d435i/)。
-本模型是理想 RGB-D 近似，没有双目基线、红外投影、畸变、IMU、噪声、
-运动模糊、曝光和真实深度缺失机制。RGB 与原生深度相机共光心，视场不同。
-
-## 目标与识别边界
-
-- 绿色方块：中心 `(0.59, -0.105, 0.03)` m，边长 0.06 m。
-- 蓝色球：中心 `(0.66, -0.02, 0.03)` m，半径 0.03 m。
-
-目标是固定、有碰撞的识别道具，当前不能抓起。机器人已增加浮动基座，
-当前为 `nq=15, nv=14, nu=7`；关键帧和 MuJoCo 控制入口已适配。
-基座的平移与旋转会带动腕部相机，视觉定位继续使用当前世界外参。
-轨迹播放及 Python 接口见 [浮动基座说明](floating_base.md)。
-物体增加了场景碰撞，相机增加了载荷，因此原策略的动力学表现可能变化。
-
-识别采用 OpenCV HSV 分割、形态学去噪和连通域分析。标签通过示例物体的
-唯一颜色约定，不是通用物体/形状识别，也不依赖 MuJoCo 的真实目标坐标或
-分割 ID。蓝色阈值排除了现有蓝灰地板；更换材质、光照或同色物体需重新调阈值。
-被遮挡或离开视野时允许返回空列表。
-
-## 数据与坐标
-
-输出包含：
-
-- `rgb.png` / `detections.png`：原始彩色图 / 检测框与光轴深度。
-- `aligned_depth_m.npy`：与 RGB 像素对齐的 float32 深度，单位米。
-- `native_depth_m.npy`：58° 垂直 FOV 的原生深度，不可直接与 RGB 像素配对。
-- `depth_preview.png`：深度伪彩色预览，黑色为无效，不用于数值测距。
-- `detections.json`：仿真时间、RGB/深度内参、光学系到世界系变换、检测结果。
-
-超出配置量程的深度为 NaN。有效深度从连通区域内部、靠近质心的实际像素选取。
-JSON 中 `depth_pixel_uv` 指明该像素。输出为该像素可见表面的三维位置，
-**不是物体中心**；深度无效时保留二维框，三维位置为 null。
-
-OpenCV 光学系为 x 向右、y 向下、z 向前；MuJoCo 相机为 x 向右、y 向上、
-视线沿 -z。使用 `R_world_camera @ diag(1,-1,-1)` 转换。
-内参以像素中心为准，`cx=(width-1)/2`、`cy=(height-1)/2`，
-`fx=fy=height/(2*tan(fovy/2))`。深度 Z 是光轴距离，反投影为
-`[(u-cx)*Z/fx, (v-cy)*Z/fy, Z]`。
-
-参考：[MuJoCo 相机定义](https://mujoco.readthedocs.io/en/3.3.2/XMLreference.html#body-camera)、
-[OpenCV HSV 阈值](https://docs.opencv.org/4.x/da/d97/tutorial_threshold_inRange.html)。
-
-## 与 RL 环境一起使用
-
-`PandaObstacleEnv.get_camera_observation()` 按需返回 `(RGBDFrame, detections)`。
-它不改变 PPO 现有的 9 维观测，也不会在每个物理步自动渲染。
-RL 目标在 reset 时按基座坐标系采样，再转换到世界坐标系。
-这是视觉采集接口；如需策略基于图像学习，还需另行定义图像观测和策略网络。
+当标定中的两个光轴不平行或存在 Z 向平移时，`aligned_depth_m` 和
+`aligned_rgb_z_m` 不能混用。检测使用后者及畸变反投影；`depth_m` 表示 RGB 轴 Z。
+坐标为右手光学系 X 右、Y 下、Z 前。世界外参来自仿真真值，仅用于评估；
+实机定位必须使用真实手眼标定/状态估计，不能由 IMU 或像素自动得到世界坐标。
 
 ```python
-import os
-os.environ["MUJOCO_GL"] = "egl"  # 必须在 import mujoco/环境模块前设置
-from piper_rl_mujoco import PandaObstacleEnv
-env = PandaObstacleEnv(visualize=False)
+from config.vision.piper_vision import D435iCamera, detect_targets
+camera = D435iCamera(model)
 try:
-    obs, info = env.reset(seed=0)
-    frame, detections = env.get_camera_observation()
+    frame = camera.capture(data)
+    detections = detect_targets(frame, camera.config)
 finally:
-    env.close()
+    camera.close()
 ```
 
-原 RL reset 仍使用自己的零位；固定识别目标未必在此姿态的视野内。
-演示目标与 RL 的随机目标不是同一个对象。使用视觉前应先将手臂移动到观察姿态。
-每个采集进程需自己的渲染器，调用方应按约 30 Hz 采集以控制开销。
+`capture()` 不推进仿真，在未到下个周期时返回上一帧；重复调用不会突破硬件帧率。
+调用者至少按目标视频帧率取帧，若长时间不调用不会补造历史图像。实际采样时刻
+记录在 `sim_time`，在当前 2 ms 物理网格上会有最多一个物理步的调度量化。
+直接瞬移 qpos、重置到同一时间或改变场景后调用 `camera.reset(seed)`。
+返回的缓存帧数组应视作只读，如需修改请先复制。时间倒退会自动重置。
+
+`PandaObstacleEnv.get_camera_observation()` 返回帧和检测，
+`get_imu_observations()` 返回本物理步的新 IMU 列表。PPO 仍使用原来的 9 维状态观测，
+尚未训练成视觉/惯性策略。HSV 分类是 Python 应用功能，D435i 硬件不原生输出物体标签。
+
+## 实机标定导出
+
+```bash
+python -m pip install -r config/imu/requirements-imu.txt
+python -m config.vision.export_calibration --output config/vision/device_calibration.json
+```
+
+多机时添加 `--serial`，改变分辨率时添加 `--depth-size` / `--color-size`。
+该命令只读取标定并保存本地 JSON，不写入相机 NVRAM。随后把统一 JSON 的 `vision` 和 `imu` 节中的
+`calibration_path` 都设为 `config/vision/device_calibration.json`。demo/RL 中的配置路径相对项目根目录。
+`camera_demo.py` 会将视觉标定路径同时用于 IMU。导出还记录固件、深度控制选项和
+IMU 支持速率；记录的曝光/激光参数不是仿真中已实现的功能。
 
 ## 验证
 
 ```bash
-conda run --no-capture-output -n piper python -m unittest discover -s config/tests -v
-conda run --no-capture-output -n piper python -m pip check
+python -m unittest discover -s config/tests -v
 ```
 
-测试使用真实 EGL 渲染，检查挂载跟随、图像尺寸、两个目标的表面三维定位、
-连续物理仿真后的识别、移除目标后无地板误检，以及无效深度处理。
+覆盖 EGL 图像、三维表面定位、非共光心外参、FOV、Z16、无效深度带、
+源深度对齐、帧率、坐标转换、IMU 采样与动态传感器。

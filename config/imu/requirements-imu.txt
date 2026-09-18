@@ -1,0 +1,2 @@
+# Optional: only needed for a physical D435i, not processing or simulation.
+pyrealsense2>=2.50,<3
