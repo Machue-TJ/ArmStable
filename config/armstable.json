@@ -1,0 +1,42 @@
+{
+  "environment": {
+    "base_callback": "config.train_sets:base_pose",
+    "control_hz": 50.0,
+    "episode_duration_s": 10.0,
+    "settle_s": 0.5,
+    "max_joint_speed_rad_s": 0.8,
+    "marker_gate_px": 80.0,
+    "lost_timeout_s": 1.0,
+    "failure_rms_m": 0.25,
+    "depth_scale_m": 3.0,
+    "gyro_scale_rad_s": 2.0,
+    "accel_scale_m_s2": 19.6133,
+    "ee_position_scale_m": 0.1
+  },
+  "reward": {
+    "marker_weight": 1.0,
+    "rigid_weight": 2.0,
+    "marker_xy_sigma_m": 0.025,
+    "marker_depth_sigma_m": 0.05,
+    "rigid_sigma_m": 0.02,
+    "action_rate_weight": 0.05,
+    "action_acceleration_weight": 0.02,
+    "joint_velocity_weight": 0.002,
+    "missing_weight": 0.2,
+    "failure_penalty": 5.0
+  },
+  "ppo": {
+    "learning_rate": 0.0003,
+    "n_steps": 1024,
+    "batch_size": 256,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "ent_coef": 0.001,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "target_kl": 0.02,
+    "verbose": 1
+  }
+}

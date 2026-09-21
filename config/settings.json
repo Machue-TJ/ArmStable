@@ -11,7 +11,7 @@
       "edge_margin": 0.12,
       "min_gap_m": 0.005,
       "positions_m": null,
-      "generator": null,
+      "generator": "config.train_sets:gen_mkr4train",
       "rgba": [0.95, 0.04, 0.65, 1.0],
       "specular": 0.9,
       "shininess": 0.8,
@@ -19,11 +19,12 @@
       "plane_rgba": [0.35, 0.7, 1.0, 0.18]
     },
     "base": {
-      "mode": "fixed",
+      "mode": "pose_callback",
       "position_m": [0, 0, 0],
       "rpy_rad": [0, 0, 0],
       "trajectory": "config/flobase/base_motion.json",
-      "callback": null,
+      "callback": "config.train_sets:base_pose",
+      "drive_time_constant_s": 0.04,
       "initial_height_m": 4.0
     }
   },
@@ -34,7 +35,7 @@
     "height": 720,
     "depth_width": 848,
     "depth_height": 480,
-    "fps": 30,
+    "fps": 25,
     "min_depth_m": 0.168,
     "max_depth_m": 3.0,
     "calibration_path": null,

@@ -4,7 +4,7 @@
 `config/settings.json` 的 `episode` 节 与 `config/episode.py`。
 路径相对于项目根目录 `Piper_rl` 解析，也支持绝对路径。
 自定义 JSON 只需填写要覆盖的字段，但必须保留顶层节名称；如
-`{"episode":{"markers":{"count":4,"marker_fovy":[20,35]}}}`。
+`{"episode":{"markers":{"count":4,"marker_fovy":[20,35],"generator":null}}}`。
 Python 的 `episode_config=` 则接受 episode 节字典；`config=` 接受完整字典或统一 JSON 路径。
 
 所有 CLI 仅在 `config/cli.py` 中解析一次。`--config` 统一作用于 episode、vision、imu、
@@ -21,7 +21,8 @@ python camera_demo.py --headless --frames 1 --seed 7
 python camera_demo.py --frames 300 --reset-every 30
 
 # 自定义数量及相机前方的平面距离
-python camera_demo.py --headless --frames 1 --marker-count 10 --marker-depth 1.0
+python camera_demo.py --headless --frames 1 --marker-count 10 --marker-depth 1.0 \
+  --marker-generator config.episode:generate_markers
 
 # 不加载策略，直接验证 RL 初始化与 reset
 python piper_rl_mujoco.py --mode smoke --headless --episodes 3 --steps 10 --seed 7
@@ -43,6 +44,22 @@ CSV 的 `camera_x/y/z_m` 是参考基座坐标系中的 **d435i_mount 原点**�
 
 默认随机选取 `[0.2, 2.8]` m 内的一个 **沿 CSV 相机 Z 轴的距离**，全部球心处于
 该深度的同一平面，平面垂直于 Z 轴。距离不是世界 Z 或欧氏距离。
+默认使用 `config.train_sets:gen_mkr4train`，九宫格相邻格点的球心间距为 **50 mm**，
+仅在 **1、2、5、6、8、9** 号位置放置球。旋转前的编号为：
+
+```text
+1 2 3
+4 5 6
+7 8 9
+```
+
+5 号点位于初始 RGB 光轴上（默认内参下即画面中心），布局绕它在平面内随机旋转。
+生成器使用模型的 RGB 光心偏移，返回坐标仍在原 CSV 相机坐标系中。
+若随机深度无法容纳完整布局，会重新采样深度；方向和深度尝试次数均有限。
+指定 `plane_depth_m` 时不改变该距离，无法排布则报错。例如默认 30° 生成视角下，
+0.2 m 不能容纳该布局。默认生成函数要求 `count=6`；其他数量可使用原随机生成器
+`config.episode:generate_markers`（或将 JSON 的 `markers.generator` 设为 `null`）。
+
 球体半径固定为 0.0075 m，FOV 校验包含整个球体，并检查投影间隔及机械臂遮挡。
 0.2 m 处的深度图表面值可能约为 0.184 m，这是光心偏移和球半径造成的正常差异。
 
@@ -52,7 +69,7 @@ CSV 的 `camera_x/y/z_m` 是参考基座坐标系中的 **d435i_mount 原点**�
 指定数量的完整球体时会报错。透明平面按两个角度分别计算宽和高。
 
 成像参数继承原 vision_config 中的值，现存放于统一 JSON 的 `vision` 节：RGB
-1280×720（名义 69°×42°）、深度 848×480（名义 87°×58°）、30 fps。加载真实
+1280×720（名义 69°×42°）、深度 848×480（名义 87°×58°）、25 fps 仿真采集。加载真实
 设备标定时以内参/畸变为准。相机外壳不出现在自己的图像中，外部窗口仍显示外壳。
 
 默认 `free_space: false`，保留渐变天空、棋盘地板、灯光及彩色道具，增大远裁剪距离。
@@ -73,7 +90,7 @@ reset 使用 `offset_z = 4 - 初始命令的 z`，之后每个轨迹/回调目�
 from piper_rl_mujoco import PandaObstacleEnv
 
 env = PandaObstacleEnv(episode_config={
-    "markers": {"count": 4, "plane_depth_m": 0.8},
+    "markers": {"count": 4, "plane_depth_m": 0.8, "generator": None},
 })
 obs, info = env.reset(seed=7)
 print(info["sample_id"], info["marker_positions_world_m"])
@@ -112,22 +129,23 @@ env.close()
 ```
 
 `context` 包含 `count`、`plane_depth_m`、`radius_m`、`half_extent_m`、
-`world_from_camera`，以及 `to_world(points)`、`accepts(candidate, previous)`。
+`world_from_camera`、`rgb_origin_m`，以及 `to_world(points)`、`accepts(candidate, previous)`。
+`rgb_origin_m` 为初始 RGB 光心在 CSV 相机坐标系中的位置。
 `half_extent_m` 是 `[半宽,半高]` 的两元素数组；圆环半径可取其最小值。
 context 的世界变换就是固定 4 m 初始高度下的变换，没有临时采样高度。
 函数返回值始终是 CSV 相机局部坐标。
 返回位置仍会统一验证；越界、重叠、被遮挡或非共面布局会明确报错。
-默认生成器在近距离双目重叠区域内拥挤时会重新排布，次数有限，不会无限循环。
+原随机生成器在近距离双目重叠区域内拥挤时会重新排布，次数有限，不会无限循环。
 
 函数还可写入可导入模块，然后通过配置或 CLI 指定：
 
 ```bash
 python camera_demo.py --headless --frames 1 --seed 7 --marker-depth 1.0 \
-  --marker-generator config.motion_examples:marker_ring
+  --marker-generator config.train_sets:marker_ring
 ```
 
-JSON 中对应 `episode.markers.generator: "config.motion_examples:marker_ring"`。
-`markers.min_gap_m` 控制球体投影之间的额外间隔；`edge_margin` 控制默认随机生成器
+JSON 中对应 `episode.markers.generator: "config.train_sets:marker_ring"`。
+`markers.min_gap_m` 控制球体投影之间的额外间隔；`edge_margin` 控制原随机生成器
 离视锥边缘的采样余量。过大的数量或间隔可能无法塞入指定平面。
 
 ## base_target 文件和自定义运动
@@ -136,12 +154,12 @@ JSON 中对应 `episode.markers.generator: "config.motion_examples:marker_ring"`
 
 ```bash
 python camera_demo.py --base-motion config/flobase/base_motion.json
-python camera_demo.py --base-callback config.motion_examples:base_pose
-python camera_demo.py --base-velocity-callback config.motion_examples:base_velocity \
+python camera_demo.py --base-callback config.train_sets:base_pose
+python camera_demo.py --base-velocity-callback config.train_sets:base_velocity \
   --base-pos 0 0 0.1 --base-rpy 0.2 0 0
 
 python piper_rl_mujoco.py --mode smoke --headless --episodes 2 \
-  --base-velocity-callback config.motion_examples:base_velocity
+  --base-velocity-callback config.train_sets:base_velocity
 ```
 
 JSON 的 `base.mode` 可选 `fixed`、`trajectory`、`pose_callback`、`velocity_callback`。
@@ -149,6 +167,10 @@ JSON 的 `base.mode` 可选 `fixed`、`trajectory`、`pose_callback`、`velocity
 [基座说明](floating_base.md)。两种 callback 模式读取 `base.callback`。
 所有回调参数均为从本次 reset 起算的仿真秒数；使用无内部累积状态的时间函数，
 即可保证 reset 重播一致。
+`config.train_sets:base_pose` 在前 0.5 s 保持初始位姿，之后用 8 s 五次多项式段连接
+每轮随机目标，XYZ 相对初始位置各限制在 ±0.1 m、RPY 各限制在 ±5°。
+运动 seed 随 episode 重采样，相同 reset seed 可复现；各段交接处速度、加速度为零。
+具体导数上界及动力学限制见 [末端稳定任务说明](armstable_rl.md)。默认基座模式由 `base.mode` 配置。
 
 ```python
 import numpy as np

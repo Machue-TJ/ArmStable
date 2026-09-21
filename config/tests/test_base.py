@@ -13,13 +13,39 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/piper-matplotlib")
 
 import mujoco
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from config.flobase.piper_base import BasePose, BaseTrajectory, BaseVelocity, FloatingBase
+from config.train_sets import BASE_HOLD_S, BASE_SEGMENT_S, base_pose
 
 
 class TrajectoryTest(unittest.TestCase):
+    def test_random_training_pose_hold_bounds_derivatives_and_replay(self):
+        for t in (0, .25, .499999, .5):
+            pose = base_pose(t)
+            np.testing.assert_array_equal(pose.position_m, [0, 0, .1])
+            np.testing.assert_array_equal(pose.quat_wxyz, [1, 0, 0, 0])
+        dt = .01
+        for seed in (7, 123):
+            times = np.arange(0, BASE_HOLD_S + 5 * BASE_SEGMENT_S, dt)
+            poses = [base_pose(t, seed) for t in times]
+            xyz = np.array([p.position_m for p in poses]) - [0, 0, .1]
+            quats = np.array([p.quat_wxyz for p in poses])
+            rpy = Rotation.from_quat(quats[:, [1, 2, 3, 0]]).as_euler("xyz")
+            coordinates = np.c_[xyz, rpy]
+            self.assertTrue(np.all(np.abs(xyz) <= .1 + 1e-12))
+            self.assertTrue(np.all(np.abs(rpy) <= np.deg2rad(5) + 1e-12))
+            for order, linear, angular in ((1, .046875, 2.34375),
+                                            (2, .018043, .90211), (3, .023438, 1.171875)):
+                derivative = np.diff(coordinates, n=order, axis=0) / dt**order
+                limits = np.r_[np.full(3, linear), np.full(3, np.deg2rad(angular))]
+                self.assertTrue(np.all(np.abs(derivative) <= limits + 1e-6))
+            # Out-of-order evaluation and reset must reproduce the same path.
+            np.testing.assert_array_equal(base_pose(times[50], seed).position_m, poses[50].position_m)
+        self.assertGreater(np.linalg.norm(base_pose(6, 7).position_m - base_pose(6, 8).position_m), .01)
+
     def test_interpolation_endpoints_and_quaternion_shortest_path(self):
         trajectory = BaseTrajectory([1, 3], [[0, 0, 0], [2, 4, 6]],
                                     rpy_rad=[[0, 0, 0], [0, 0, np.pi]])

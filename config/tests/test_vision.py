@@ -20,7 +20,8 @@ from config.flobase.piper_base import FloatingBase
 class VisionIntegrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.episode_config = load_episode_config({"markers": {"count": 2, "plane_depth_m": 0.7}})
+        cls.episode_config = load_episode_config({"markers": {
+            "count": 2, "plane_depth_m": 0.7, "generator": None}})
         cls.model = make_model(cls.episode_config)
         cls.data = mujoco.MjData(cls.model)
         # Retain legacy D435i profile/calibration coverage, with visible fixture
@@ -96,10 +97,10 @@ class VisionIntegrationTest(unittest.TestCase):
         first = self.camera.capture(self.data)
         self.data.time = 0.002
         self.assertIs(self.camera.capture(self.data), first)
-        self.data.time = 0.034
+        self.data.time = 0.04
         second = self.camera.capture(self.data)
         self.assertIsNot(second, first)
-        self.data.time = 0.068
+        self.data.time = 0.08
         self.assertIsNot(self.camera.capture(self.data), second)
 
     def test_alignment_uses_source_depth_and_preserves_holes(self):

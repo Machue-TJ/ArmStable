@@ -7,7 +7,7 @@
 | `settings.json` | 唯一运行配置：episode、vision、imu、cli、training |
 | `settings.py`、`cli.py` | 配置合并/缓存、所有命令行选项和解析 |
 | `episode.py` | demo/RL 共用 CSV 初始化、marker 生成及基座模式 |
-| `motion_examples.py` | 用户可修改的位姿、速度和 marker 排布函数示例 |
+| `train_sets.py` | 基座运动回调和默认 50 mm 九宫格 marker 生成函数 |
 | `vision/markers.py` | 球体图像检测、多点深度球心估计和跨帧跟踪 |
 | `vision/qt_fonts.py` | OpenCV 导入后修正 Qt 字体目录 |
 | `flobase/piper_base.py` | 基座位姿、轨迹加载与动力学控制 |

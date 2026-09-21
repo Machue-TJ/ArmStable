@@ -36,8 +36,9 @@ def validate_vision_config(config):
         raise ValueError("Supported RGB profiles: 1280x720 or 1920x1080")
     if (config["depth_width"], config["depth_height"]) not in ((848, 480), (1280, 720)):
         raise ValueError("Supported depth profiles: 848x480 or 1280x720")
-    if config["fps"] not in (6, 15, 30):
-        raise ValueError("Paired color/depth FPS must be 6, 15 or 30")
+    # 25 Hz is a simulation/feature extraction cadence, not a USB profile claim.
+    if config["fps"] not in (6, 15, 25, 30):
+        raise ValueError("Simulated RGB-D FPS must be 6, 15, 25 or 30")
     min_z = 0.168 if config["depth_width"] == 848 else 0.28
     if not min_z <= config["min_depth_m"] < config["max_depth_m"]:
         raise ValueError(f"Depth window must start at >= {min_z} m for this profile")

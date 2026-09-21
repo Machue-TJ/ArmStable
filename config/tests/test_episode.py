@@ -12,8 +12,10 @@ import mujoco
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.episode import EpisodeInitializer, load_episode_config, make_model, project_path, configure_base
+from config.episode import (EpisodeInitializer, PlacementError, generate_markers,
+                            load_episode_config, make_model, project_path, configure_base)
 from config.flobase.piper_base import BasePose, FloatingBase
+from config.train_sets import gen_mkr4train
 from config.vision.piper_vision import D435iCamera, detect_targets, load_vision_config, project
 
 
@@ -76,6 +78,35 @@ class EpisodeTest(unittest.TestCase):
                     if self.initializer.floor_gid in (contact.geom1, contact.geom2):
                         self.assertGreaterEqual(contact.dist, -1e-5)
                 self.assert_fov(info)
+                # Output order is grid cells 1, 2, 5, 6, 8, 9, even after rotation.
+                points = np.asarray(info["marker_positions_camera_m"])
+                center = points[2]
+                right, down = points[3] - center, points[4] - center
+                np.testing.assert_allclose(np.linalg.norm([right, down], axis=1), .05, atol=1e-12)
+                self.assertAlmostEqual(np.dot(right, down), 0)
+                np.testing.assert_allclose(points[[0, 1, 5]] - center,
+                                           [-right-down, -down, right+down], atol=1e-12)
+                # CSV mount and RGB optical center differ: cell 5 must project
+                # to the actual RGB principal point, including rotated bases.
+                world_center = np.asarray(info["marker_positions_world_m"])[2]
+                camera = self.camera.rgb_id
+                optical = (world_center - self.data.cam_xpos[camera]) @ (
+                    self.data.cam_xmat[camera].reshape(3, 3) @ np.diag([1, -1, -1]))
+                np.testing.assert_allclose(project(optical[None], self.camera.intrinsics(camera))[0],
+                                           self.camera.intrinsics(camera)[:2, 2], atol=1e-5)
+
+    def test_training_grid_rejects_impossible_fixed_depth_and_wrong_count(self):
+        self.assertIs(self.initializer.generator, gen_mkr4train)
+        self.initializer.settings["plane_depth_m"] = .2
+        with self.assertRaises(PlacementError):
+            self.initializer.reset(np.random.default_rng(7), sample_id=1)
+        # Keep the existing configurable-count sampler available explicitly.
+        config = load_episode_config({"markers": {"count": 5, "plane_depth_m": 1}})
+        initializer = EpisodeInitializer(self.model, self.data, self.base, config)
+        with self.assertRaisesRegex(ValueError, "count = 6"):
+            initializer.reset(np.random.default_rng(7), sample_id=1)
+        initializer.generator = generate_markers
+        self.assertEqual(len(initializer.reset(np.random.default_rng(7))["marker_positions_world_m"]), 5)
 
     def test_scene_material_plane_and_episode_height_replay(self):
         self.assertGreaterEqual(self.model.geom("floor").id, 0)
@@ -97,6 +128,33 @@ class EpisodeTest(unittest.TestCase):
         repeated = self.initializer.reset(np.random.default_rng(1), sample_id=1)
         self.assertEqual(first, repeated)
 
+    def test_random_base_drive_dynamics_and_tracking(self):
+        previous = self.model.eq_solref[self.base.weld_id].copy()
+        try:
+            configure_base(self.base, self.config["base"])
+            self.initializer.reset(np.random.default_rng(8), sample_id=200)
+            np.testing.assert_allclose(self.model.eq_solref[self.base.weld_id], [.04, 1])
+            initial = self.base.get_pose().position_m.copy()
+            peak_acceleration = peak_force = peak_error = 0.0
+            for _ in range(round(12 / self.model.opt.timestep)):
+                self.base.step()
+                actual = self.base.get_pose().position_m
+                self.assertTrue(np.all(np.abs(actual - initial) < .1))
+                if self.data.time > .5:
+                    peak_acceleration = max(peak_acceleration,
+                        np.linalg.norm(self.data.qacc[self.base.qvel_slice][:3]))
+                    peak_force = max(peak_force,
+                        np.linalg.norm(self.data.qfrc_constraint[self.base.qvel_slice][:3]))
+                    peak_error = max(peak_error,
+                        np.linalg.norm(actual - self.data.mocap_pos[self.base.mocap_id]))
+            # Regression limits for this fixed pose/seed and held joints, not
+            # universal force limits for arbitrary contacts or policy actions.
+            self.assertLess(peak_acceleration, .1)
+            self.assertLess(peak_force, 1.5)
+            self.assertLess(peak_error, .006)
+        finally:
+            self.model.eq_solref[self.base.weld_id] = previous
+
     def test_seed_base_transform_and_world_fixed_markers(self):
         first = self.initializer.reset(np.random.default_rng(7))
         self.assertEqual(first, self.initializer.reset(np.random.default_rng(7)))
@@ -113,6 +171,9 @@ class EpisodeTest(unittest.TestCase):
     def test_depth_endpoints_are_detected_after_repeated_resets(self):
         for depth in (.2, 2.8):
             self.initializer.settings["plane_depth_m"] = depth
+            # A centered 50 mm grid cannot fit at .2 m in the 30-degree window;
+            # retain the near-depth sensor regression with the random sampler.
+            self.initializer.generator = generate_markers if depth == .2 else gen_mkr4train
             for sample_id in (1, 3, 200, 945):
                 with self.subTest(depth=depth, sample_id=sample_id):
                     info = self.initializer.reset(np.random.default_rng(sample_id), sample_id=sample_id)
@@ -156,7 +217,7 @@ class RLResetTest(unittest.TestCase):
     def test_seed_reset_controls_sensors_and_configured_callback(self):
         from piper_rl_mujoco import PandaObstacleEnv
         config = {"base": {"mode": "velocity_callback", "position_m": [1, 2, 3],
-                            "callback": "config.motion_examples:base_velocity"}}
+                            "callback": "config.train_sets:base_velocity"}}
         env = PandaObstacleEnv(episode_config=config)
         try:
             obs, info = env.reset(seed=7)

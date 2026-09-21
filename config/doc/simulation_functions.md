@@ -13,7 +13,7 @@ Qt 字体修复。以下列出相关生产模块的全部显式函数/方法，�
 | `config/settings.json` | 全部运行配置、CLI 默认值及 PPO 超参数 |
 | `config/settings.py`、`config/cli.py` | 统一配置读取、合并、缓存和命令行解析 |
 | `config/episode.py` | 统一模型构造、初始化、视锥/遮挡验证、固定基座高度和外部视角 |
-| `config/motion_examples.py` | 用户可修改的位姿、速度、marker 环形布局示例 |
+| `config/train_sets.py` | 基座运动回调、默认九宫格 marker 和环形布局示例 |
 | `config/flobase/piper_base.py` | 位姿/速度类型、文件轨迹、物理基座跟随 |
 | `config/vision/piper_vision.py` | RGB-D 渲染、噪声、对齐、传统检测、任务检测入口 |
 | `config/vision/markers.py` | 图像轮廓、多点深度球心估计、跨帧编号 |
@@ -185,7 +185,8 @@ marker 的共面深度。其法向与生成时相机前向一致，随 reset 更
 | `EpisodeInitializer._validate_points(points)` | N×3 坐标 | None；不通过抛异常 | 检查有限数、数量、共面及逐点 accepts，应用于用户自定义布局；内置采样器已逐点验证，无需重复射线 |
 
 `PlacementError` 是布局不可行时的 `ValueError` 子类。`MarkerContext` 自动生成的
-构造器接收 `count, plane_depth_m, radius_m, half_extent_m, world_from_camera, accepts`。
+构造器接收 `count, plane_depth_m, radius_m, half_extent_m, world_from_camera, accepts`，
+以及可选的 `rgb_origin_m`（初始 RGB 光心在 CSV 相机坐标系中的位置）。
 自定义函数必须返回数量一致的坐标；自定义过密布局仍可能无解，会明确报错。
 
 固定高度仅需读取初始基座命令的 z；不遍历机械臂 geom，也不执行试探性平移。
@@ -295,9 +296,10 @@ OpenGL/驱动问题的保证；无窗口环境应使用 `--headless`。
 | `PandaObstacleEnv.close()` | 无 | None | 关闭相机和外部窗口 |
 | `train_ppo(n_envs=None,total_timesteps=None,model_save_path=None,visualize=False,env_kwargs=None,seed=None)` | 训练规模、路径、统一环境参数 | None；保存模型 | 从统一配置补全默认值，延迟导入 torch/PPO；SubprocVecEnv 独立 seed，学习并保存 |
 | `test_ppo(model_path=None,total_episodes=None,env_kwargs=None,visualize=True,seed=None)` | 模型/轮数/环境配置 | None；输出成功率 | 加载策略，每轮调用统一 reset，再循环预测/step |
-| `motion_examples.base_pose(time_s)` | episode 时间 | BasePose | 正弦平移与 RPY 示例，适用于 pose_callback |
-| `motion_examples.base_velocity(time_s)` | episode 时间 | BaseVelocity | 随时间变化的世界线速度/角速度示例，供积分 |
-| `motion_examples.marker_ring(context,rng)` | MarkerContext、随机源 | N×3 坐标 | 随机初始相位的均匀圆环，半径取可用半宽/半高较小值的 0.65；最终仍需统一合法性校验 |
+| `train_sets.base_pose(time_s)` | episode 时间 | BasePose | 前 0.5 s 静止，之后用 8 s 五次段连接随机 XYZ/RPY 目标，每轴限制 ±0.1 m/±5°，适用于 pose_callback |
+| `train_sets.base_velocity(time_s)` | episode 时间 | BaseVelocity | 随时间变化的世界线速度/角速度示例，供积分 |
+| `train_sets.gen_mkr4train(context,rng)` | MarkerContext、随机源 | 6×3 坐标 | 默认生成器：50 mm 九宫格的 1、2、5、6、8、9 号位置，5 号对准初始 RGB 光轴，平面内随机旋转 |
+| `train_sets.marker_ring(context,rng)` | MarkerContext、随机源 | N×3 坐标 | 随机初始相位的均匀圆环，半径取可用半宽/半高较小值的 0.65；最终仍需统一合法性校验 |
 
 RL 仍是原 9 维 reach 任务，不会自动把“达到目标”变成“视觉跟踪”。新数据通过 info
 和相机接口提供；如训练视觉策略，需要另外设计观测空间和奖励。原策略尺寸兼容，
@@ -314,11 +316,11 @@ python camera_demo.py --seed 7 --marker-depth 1.0 --frames 300
 
 # 文件轨迹和用户速度回调
 python camera_demo.py --base-motion config/flobase/base_motion.json
-python camera_demo.py --base-velocity-callback config.motion_examples:base_velocity
+python camera_demo.py --base-velocity-callback config.train_sets:base_velocity
 
 # 自定义排布函数和数量
 python camera_demo.py --marker-count 8 --marker-depth 1.0 \
-  --marker-generator config.motion_examples:marker_ring
+  --marker-generator config.train_sets:marker_ring
 
 # RL 使用相同初始化和配置
 python piper_rl_mujoco.py --mode smoke --headless --episodes 3 --seed 7

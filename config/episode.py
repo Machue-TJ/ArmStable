@@ -107,9 +107,19 @@ def make_model(config):
 def configure_base(base, settings, motion=None):
     """Configure held pose, file/pose callback, or world linear/angular velocity."""
     from config.flobase.piper_base import BasePose
+    from config.train_sets import RandomBaseMotion, base_pose
+
+    time_constant = settings.get("drive_time_constant_s", base.model.eq_solref[base.weld_id, 0])
+    if not np.isfinite(time_constant) or time_constant < 2 * base.model.opt.timestep:
+        raise ValueError("base.drive_time_constant_s must be at least two physics timesteps")
+    base.model.eq_solref[base.weld_id] = [time_constant, 1.0]
+
+    def pose_motion(callback):
+        return RandomBaseMotion() if callback is base_pose else callback
+
     if motion is not None:
         if callable(motion):
-            base.set_motion(motion)
+            base.set_motion(pose_motion(motion))
         else:
             base.load(project_path(motion))
         return
@@ -122,7 +132,7 @@ def configure_base(base, settings, motion=None):
     elif mode == "trajectory":
         base.load(project_path(settings["trajectory"]))
     elif mode == "pose_callback":
-        base.set_motion(load_callback(settings["callback"]))
+        base.set_motion(pose_motion(load_callback(settings["callback"])))
     elif mode == "velocity_callback":
         base.set_velocity_motion(load_callback(settings["callback"]), initial_pose=pose)
     else:
@@ -153,6 +163,8 @@ class MarkerContext:
 
     All centers must share one Z plane. Use accepts() while sampling custom
     patterns to check actual RGB/stereo FOVs, separation and scene occlusion.
+    rgb_origin_m is the initial RGB optical center in CSV-camera coordinates;
+    None means the two origins coincide for manually constructed contexts.
     """
     count: int
     plane_depth_m: float
@@ -160,6 +172,7 @@ class MarkerContext:
     half_extent_m: np.ndarray
     world_from_camera: np.ndarray
     accepts: object
+    rgb_origin_m: np.ndarray | None = None
 
     def to_world(self, points_m):
         points = np.asarray(points_m, dtype=float)
@@ -247,6 +260,9 @@ class EpisodeInitializer:
 
     def _reset_row(self, row, rng, marker_positions_m):
         """Apply one CSV row at the fixed base height and place a visible layout."""
+        from config.train_sets import RandomBaseMotion
+        if isinstance(self.base.motion, RandomBaseMotion):
+            self.base.motion.reset(rng)
         mujoco.mj_resetDataKeyframe(self.model, self.data, self.model.key("home").id)
         angles = np.array([row[f"q{i}_rad"] for i in range(1, 7)])
         self.data.qpos[self.qids] = angles
@@ -281,14 +297,24 @@ class EpisodeInitializer:
         if positions is not None:
             points = np.asarray(positions, dtype=float)
         else:
-            depth = float(rng.uniform(*self.settings["depth_range_m"])) if depth is None else depth
-            half_extent = depth * self._tan - self._sphere_margin
-            if np.any(half_extent <= 0):
-                raise PlacementError("marker_fovy is too narrow for a 15 mm sphere at this depth")
-            context = MarkerContext(len(self.gids), depth, 0.0075,
-                                    half_extent * (1 - self.settings["edge_margin"]),
-                                    transform.copy(), self._accepts)
-            points = np.asarray((self.generator or generate_markers)(context, rng), dtype=float)
+            random_depth = depth is None
+            rgb_origin = (self.data.cam_xpos[rgb_id] - origin) @ transform[:3, :3]
+            for attempt in range(100 if random_depth else 1):
+                depth = float(rng.uniform(*self.settings["depth_range_m"])) if random_depth else depth
+                half_extent = depth * self._tan - self._sphere_margin
+                context = MarkerContext(len(self.gids), depth, 0.0075,
+                                        half_extent * (1 - self.settings["edge_margin"]),
+                                        transform.copy(), self._accepts, rgb_origin.copy())
+                try:
+                    if np.any(half_extent <= 0):
+                        raise PlacementError("marker_fovy is too narrow for a 15 mm sphere at this depth")
+                    points = np.asarray((self.generator or generate_markers)(context, rng), dtype=float)
+                    break
+                except PlacementError:
+                    # A fixed-size layout may not fit at a randomly chosen near
+                    # depth. Retry depths, but never change an explicit depth.
+                    if not random_depth or attempt == 99:
+                        raise
         # The built-in sampler already checks every candidate. User layouts
         # must still be validated, including custom generators that skip accepts().
         if positions is not None or self.generator is not None:
